@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const test = require("node:test");
-const { add, subtract, multiply, divide, calculate } = require("../calculator.js");
+const { add, subtract, multiply, divide, modulo, power, squareRoot, calculate } = require("../calculator.js");
 
 test("addition handles positive, negative, decimal, and zero operands", () => {
   assert.equal(add(2, 3), 5);
@@ -36,15 +36,52 @@ test("division rejects positive and negative zero divisors", () => {
   assert.throws(() => divide(1, -0), { name: "RangeError", message: "Cannot divide by zero." });
 });
 
+test("modulo returns the remainder and rejects zero divisors", () => {
+  assert.equal(modulo(5, 2), 1);
+  assert.equal(modulo(10, 3), 1);
+  assert.equal(modulo(-10, 3), -1);
+  assert.equal(modulo(5.5, 2), 1.5);
+  assert.equal(modulo(2, 5), 2);
+  assert.equal(modulo(6, 3), 0);
+  for (const divisor of [0, -0]) {
+    assert.throws(() => modulo(1, divisor), {
+      name: "RangeError",
+      message: "Cannot take modulo by zero.",
+    });
+  }
+});
+
+test("power handles positive, negative, and fractional exponents", () => {
+  assert.equal(power(2, 3), 8);
+  assert.equal(power(2, -2), 0.25);
+  assert.equal(power(9, 0.5), 3);
+  assert.equal(power(5, 0), 1);
+  assert.equal(power(-2, 3), -8);
+});
+
+test("square root handles non-negative numbers and rejects negative numbers", () => {
+  assert.equal(squareRoot(9), 3);
+  assert.equal(squareRoot(16), 4);
+  assert.equal(squareRoot(0), 0);
+  assert.equal(squareRoot(2), Math.sqrt(2));
+  assert.throws(() => squareRoot(-1), {
+    name: "RangeError",
+    message: "Cannot take the square root of a negative number.",
+  });
+});
+
 test("calculate dispatches each supported operator", () => {
   assert.equal(calculate("+", 2, 3), 5);
   assert.equal(calculate("-", 10, 4), 6);
   assert.equal(calculate("*", 45, 2), 90);
   assert.equal(calculate("/", 20, 5), 4);
+  assert.equal(calculate("%", 10, 3), 1);
+  assert.equal(calculate("^", 2, 3), 8);
+  assert.equal(calculate("sqrt", 9), 3);
 });
 
 test("arithmetic functions reject non-numeric and non-finite operands", () => {
-  const functions = [add, subtract, multiply, divide];
+  const functions = [add, subtract, multiply, divide, modulo, power];
   for (const arithmeticFunction of functions) {
     for (const [first, second] of [["2", 3], [Number.NaN, 1], [1, Infinity]]) {
       assert.throws(() => arithmeticFunction(first, second), {
@@ -53,12 +90,18 @@ test("arithmetic functions reject non-numeric and non-finite operands", () => {
       });
     }
   }
+  for (const operand of ["9", Number.NaN, Infinity]) {
+    assert.throws(() => squareRoot(operand), {
+      name: "TypeError",
+      message: "Operands must be finite numbers.",
+    });
+  }
 });
 
 test("calculate rejects unsupported operators", () => {
-  assert.throws(() => calculate("%", 2, 3), {
+  assert.throws(() => calculate("unknown", 2, 3), {
     name: "RangeError",
-    message: 'Invalid operation "%". Choose +, -, *, or /.',
+    message: 'Invalid operation "unknown". Choose +, -, *, /, %, ^, or sqrt.',
   });
 });
 
@@ -69,6 +112,9 @@ test("CLI prints results for the examples in the image", () => {
     { args: ["-", "10", "4"], expected: "6\n" },
     { args: ["*", "45", "2"], expected: "90\n" },
     { args: ["/", "20", "5"], expected: "4\n" },
+    { args: ["%", "5", "2"], expected: "1\n" },
+    { args: ["^", "2", "3"], expected: "8\n" },
+    { args: ["sqrt", "16"], expected: "4\n" },
   ];
 
   for (const { args, expected } of examples) {
@@ -76,6 +122,24 @@ test("CLI prints results for the examples in the image", () => {
     assert.equal(result.status, 0);
     assert.equal(result.stdout, expected);
     assert.equal(result.stderr, "");
+  }
+});
+
+test("CLI rejects invalid new operations and argument counts", () => {
+  const script = require.resolve("../calculator.js");
+  const cases = [
+    { args: ["%", "1", "0"], error: /Cannot take modulo by zero/ },
+    { args: ["sqrt", "-1"], error: /Cannot take the square root of a negative number/ },
+    { args: ["sqrt", "invalid"], error: /Operands must be finite numbers/ },
+    { args: ["sqrt", "9", "2"], error: /Usage:/ },
+    { args: ["^", "2"], error: /Usage:/ },
+  ];
+
+  for (const { args, error } of cases) {
+    const result = spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, error);
   }
 });
 
